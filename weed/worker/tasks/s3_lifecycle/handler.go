@@ -347,6 +347,7 @@ func (h *Handler) executeDailyReplay(ctx context.Context, request *plugin_pb.Exe
 			len(shards), cfg.Workers, limiterDesc, len(buckets), len(parseErrors)),
 	})
 
+	stopProgress := startProgressReporter(request, sender, runStats.Summary, progressInterval)
 	report.err = dailyrun.Run(ctx, dailyrun.Config{
 		Shards:          shards,
 		BucketsPath:     bucketsPath,
@@ -363,6 +364,7 @@ func (h *Handler) executeDailyReplay(ctx context.Context, request *plugin_pb.Exe
 		ClientName:      "worker-s3-lifecycle-daily",
 		Stats:           runStats,
 	})
+	stopProgress()
 	report.canceled = ctx.Err() != nil
 	report.elapsed = time.Since(startedAt)
 	report.summary = runStats.Summary()
