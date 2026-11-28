@@ -109,6 +109,16 @@ func (wfs *WFS) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out *fuse
 		}
 	}
 	if fh != nil {
+		if _, ok := input.GetSize(); ok && path != "" && (!wfs.option.WritebackCache || wfs.option.NfsExport) {
+			// A size change is stored before the reply, as it is without an
+			// open handle. Deferred ahead of the unlocks below so it runs
+			// after them: the flush takes these locks itself.
+			defer func() {
+				if code == fuse.OK {
+					code = wfs.doFlush(context.Background(), fh, input.Uid, input.Gid, false, metadataFlushTimeout)
+				}
+			}()
+		}
 		active := wfs.fhLockTable.AcquireLock("SetAttr", fh.fh, util.ExclusiveLock)
 		defer wfs.fhLockTable.ReleaseLock(fh.fh, active)
 		fh.entryLock.Lock()
@@ -131,6 +141,10 @@ func (wfs *WFS) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out *fuse
 
 	if size, ok := input.GetSize(); ok {
 		glog.V(4).Infof("%v setattr set size=%v chunks=%d", path, size, len(entry.GetChunks()))
+		// Refused before anything changes: the flush would refuse it after.
+		if current := filer.FileSize(entry); size > current && wfs.isOverQuotaAfter(size-current) {
+			return fuse.Status(syscall.ENOSPC)
+		}
 		// Invalidate the open-mtime cache so the next Open does not set
 		// FOPEN_KEEP_CACHE with stale kernel page cache data.
 		wfs.invalidateOpenMtimeCache(input.NodeId)

@@ -56,16 +56,22 @@ func (wfs *WFS) GetUncommittedBytes() int64 {
 // IsOverQuotaWithUncommitted checks if quota is exceeded including uncommitted writes.
 // This provides real-time quota enforcement between periodic checks.
 func (wfs *WFS) IsOverQuotaWithUncommitted() bool {
+	return wfs.isOverQuotaAfter(0)
+}
+
+// isOverQuotaAfter reports whether charging growth more bytes on top of the
+// uncommitted writes would exceed the quota.
+func (wfs *WFS) isOverQuotaAfter(growth uint64) bool {
 	if wfs.option.Quota <= 0 {
 		return false
 	}
 	if wfs.IsOverQuota {
 		return true
 	}
-	// Check if uncommitted writes would exceed quota
 	uncommitted := atomic.LoadInt64(&uncommittedBytes)
 	_, usedSize := wfs.diskSizes()
-	return (int64(usedSize) + uncommitted) > wfs.option.Quota
+	headroom := wfs.option.Quota - int64(usedSize) - uncommitted
+	return headroom < 0 || growth > uint64(headroom)
 }
 
 func (wfs *WFS) loopCheckQuota() {

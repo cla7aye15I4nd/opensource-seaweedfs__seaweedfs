@@ -269,8 +269,13 @@ func attributeTruncateLockScenario(t *testing.T) {
 	fh.entry.RLock()
 	defer fh.entry.RUnlock()
 	e := fh.entry.Entry
-	if e.Attributes.FileMode&0777 != 0600 || e.Attributes.FileSize != 256 || len(e.Chunks) != 1 || !proto.Equal(e.Chunks[0], current.Chunks[0]) {
-		t.Fatalf("lost acknowledged chmod or pending truncate: %v", e)
+	if e.Attributes.FileMode&0777 != 0600 || e.Attributes.FileSize != 256 || len(e.Chunks) != 1 || !proto.Equal(e.Chunks[0].Fid, current.Chunks[0].Fid) || e.Chunks[0].Size != 256 {
+		t.Fatalf("lost acknowledged chmod or truncate: %v", e)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.entry.Attributes.FileMode&0777 != 0600 || fake.entry.Attributes.FileSize != 256 || len(fake.entry.Chunks) != 1 {
+		t.Fatalf("truncate not stored with the acknowledged chmod: %v", fake.entry)
 	}
 }
 func waitAttributeLockPair(t *testing.T, pairs [][2]string) {

@@ -20,7 +20,7 @@ import (
 // read and a nil pointer dereference in filer.TotalSize. Run under -race.
 func TestAttrChunkRace(t *testing.T) {
 	wfs := &WFS{
-		option:         &Option{},
+		option:         &Option{WritebackCache: true},
 		inodeToPath:    NewInodeToPath(util.FullPath("/"), 0),
 		fhMap:          NewFileHandleToInode(),
 		fhLockTable:    util.NewLockTable[FileHandleId](),

@@ -187,8 +187,8 @@ func TestFsyncCommitsAfterSlowUpload(t *testing.T) {
 	checkCommitted(t, fh, fake, 1)
 }
 
-// A truncate below dirty data flushes the data first (see SetAttr); that
-// flush gets the commit-only deadline too.
+// A truncate below dirty data flushes the data first (see SetAttr), then
+// stores the cut; both flushes get the commit-only deadline.
 func TestTruncateFlushCommitsAfterSlowUpload(t *testing.T) {
 	wfs, fh, fake := newSlowDataFlush(t, time.Second, 200*time.Millisecond, false)
 
@@ -200,8 +200,8 @@ func TestTruncateFlushCommitsAfterSlowUpload(t *testing.T) {
 	if status := wfs.SetAttr(nil, in, &out); status != fuse.OK {
 		t.Fatalf("SetAttr size down = %v, want OK", status)
 	}
-	if got := fake.commits.Load(); got != 1 {
-		t.Fatalf("CreateEntry calls = %d, want 1", got)
+	if got := fake.commits.Load(); got != 2 {
+		t.Fatalf("CreateEntry calls = %d, want 2", got)
 	}
 	if out.Size != 8 {
 		t.Fatalf("size after truncate = %d, want 8", out.Size)
