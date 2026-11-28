@@ -1604,6 +1604,7 @@ impl VolumeServer for VolumeGrpcService {
         self.check_grpc_admin_auth(&request)?;
         self.state.check_maintenance()?;
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
         let rp = crate::storage::super_block::ReplicaPlacement::from_string(&req.replication)
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
@@ -2007,6 +2008,8 @@ impl VolumeServer for VolumeGrpcService {
     ) -> Result<Response<volume_server_pb::VolumeMountResponse>, Status> {
         self.check_grpc_admin_auth(&request)?;
         let req = request.into_inner();
+        check_volume_collection(req.collection.as_deref().unwrap_or_default())
+            .map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
 
         // A decode in flight may be mid-compaction on this volume's
@@ -2367,6 +2370,7 @@ impl VolumeServer for VolumeGrpcService {
         self.check_grpc_admin_auth(&request)?;
         self.state.check_maintenance()?;
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
 
         if !self.state.allow_untrusted_remote_endpoints {
@@ -3457,6 +3461,7 @@ impl VolumeServer for VolumeGrpcService {
         self.check_grpc_admin_auth(&request)?;
         self.state.check_maintenance()?;
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
         let collection = &req.collection;
 
@@ -3927,6 +3932,7 @@ impl VolumeServer for VolumeGrpcService {
         self.check_grpc_admin_auth(&request)?;
         self.state.check_maintenance()?;
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
 
         if !self.state.allow_untrusted_remote_endpoints {
@@ -4007,6 +4013,7 @@ impl VolumeServer for VolumeGrpcService {
     ) -> Result<Response<volume_server_pb::VolumeEcShardsDeleteResponse>, Status> {
         self.check_grpc_admin_auth(&request)?;
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
 
         if req.full_teardown {
@@ -4150,6 +4157,7 @@ impl VolumeServer for VolumeGrpcService {
         request: Request<volume_server_pb::VolumeEcShardsMountRequest>,
     ) -> Result<Response<volume_server_pb::VolumeEcShardsMountResponse>, Status> {
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
 
         // Pre-validate the ENTIRE batch before any mutation: validating inside
@@ -4481,6 +4489,7 @@ impl VolumeServer for VolumeGrpcService {
         self.check_grpc_admin_auth(&request)?;
         self.state.check_maintenance()?;
         let req = request.into_inner();
+        check_volume_collection(&req.collection).map_err(Status::invalid_argument)?;
         let vid = VolumeId(req.volume_id);
 
         // Staged mode: the caller decoded off-box and streamed the normal volume
@@ -6023,6 +6032,8 @@ mod copy_source {
                 .await
                 .map_err(|e| Status::internal(format!("read volume file status failed, {}", e)))?
                 .into_inner();
+            super::check_volume_collection(&vol_info.collection)
+                .map_err(|e| Status::internal(format!("source volume {}: {}", volume_id, e)))?;
             Ok(Self(vol_info))
         }
     }
@@ -13373,6 +13384,150 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code(), tonic::Code::Unavailable);
         assert!(err.message().contains("is being copied"), "{}", err.message());
+    }
+
+    #[tokio::test]
+    async fn test_handlers_reject_a_collection_that_leaves_the_volume_dir() {
+        use volume_server_pb::*;
+        let (service, _tmp) = make_local_service_with_volume("collection_check", None);
+        for collection in ["..", "../outside", "a/b", "a\\b"] {
+            let c = || collection.to_string();
+            let errs = [
+                (
+                    "allocate_volume",
+                    service
+                        .allocate_volume(Request::new(AllocateVolumeRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_mount",
+                    service
+                        .volume_mount(Request::new(VolumeMountRequest {
+                            volume_id: 7,
+                            collection: Some(c()),
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_copy",
+                    service
+                        .volume_copy(Request::new(VolumeCopyRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_ec_shards_rebuild",
+                    service
+                        .volume_ec_shards_rebuild(Request::new(VolumeEcShardsRebuildRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_ec_shards_copy",
+                    service
+                        .volume_ec_shards_copy(Request::new(VolumeEcShardsCopyRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_ec_shards_delete",
+                    service
+                        .volume_ec_shards_delete(Request::new(VolumeEcShardsDeleteRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            full_teardown: true,
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_ec_shards_mount",
+                    service
+                        .volume_ec_shards_mount(Request::new(VolumeEcShardsMountRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            shard_ids: vec![0],
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+                (
+                    "volume_ec_shards_to_volume",
+                    service
+                        .volume_ec_shards_to_volume(Request::new(VolumeEcShardsToVolumeRequest {
+                            volume_id: 7,
+                            collection: c(),
+                            from_staged: true,
+                            ..Default::default()
+                        }))
+                        .await
+                        .err(),
+                ),
+            ];
+            for (name, err) in errs {
+                let err = err.unwrap_or_else(|| panic!("{name}({collection:?}) succeeded"));
+                assert_eq!(
+                    err.code(),
+                    tonic::Code::InvalidArgument,
+                    "{name}({collection:?})"
+                );
+                assert!(
+                    err.message().contains("invalid collection"),
+                    "{name}({collection:?}): {}",
+                    err.message()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_volume_copy_rejects_a_source_collection_that_leaves_the_volume_dir() {
+        let (source_service, _source_tmp) = make_local_service_with_volume("a\\b", None);
+        let (port, _shutdown) = serve_source(source_service).await;
+        let (dest_service, _dest_tmp) = make_local_service_with_volume("", None);
+        dest_service
+            .state
+            .store
+            .write()
+            .unwrap()
+            .delete_volume(VolumeId(1), false, false, false)
+            .unwrap();
+
+        let err = dest_service
+            .volume_copy(Request::new(volume_server_pb::VolumeCopyRequest {
+                volume_id: 1,
+                source_data_node: format!("127.0.0.1:1.{}", port),
+                ..Default::default()
+            }))
+            .await
+            .err()
+            .expect("copy from a source reporting a path collection succeeded");
+        assert!(
+            err.message().contains("invalid collection"),
+            "{}",
+            err.message()
+        );
     }
 
     /// The staged adoption renames .copying files into place and mounts, so

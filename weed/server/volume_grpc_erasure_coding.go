@@ -205,6 +205,9 @@ func (vs *VolumeServer) VolumeEcShardsRebuild(ctx context.Context, req *volume_s
 	if err := vs.checkGrpcAdminAuth(ctx); err != nil {
 		return nil, err
 	}
+	if err := checkVolumeCollection(req.Collection); err != nil {
+		return nil, err
+	}
 	if err := vs.CheckMaintenanceMode(); err != nil {
 		return nil, err
 	}
@@ -397,6 +400,9 @@ func (vs *VolumeServer) VolumeEcShardsRebuild(ctx context.Context, req *volume_s
 // VolumeEcShardsCopy copy the .ecx and some ec data slices
 func (vs *VolumeServer) VolumeEcShardsCopy(ctx context.Context, req *volume_server_pb.VolumeEcShardsCopyRequest) (_ *volume_server_pb.VolumeEcShardsCopyResponse, err error) {
 	if err := vs.checkGrpcAdminAuth(ctx); err != nil {
+		return nil, err
+	}
+	if err := checkVolumeCollection(req.Collection); err != nil {
 		return nil, err
 	}
 	if err := vs.CheckMaintenanceMode(); err != nil {
@@ -842,6 +848,9 @@ func (vs *VolumeServer) VolumeEcShardsDelete(ctx context.Context, req *volume_se
 	if err := vs.checkGrpcAdminAuth(ctx); err != nil {
 		return nil, err
 	}
+	if err := checkVolumeCollection(req.Collection); err != nil {
+		return nil, err
+	}
 
 	bName := erasure_coding.EcShardBaseFileName(req.Collection, int(req.VolumeId))
 
@@ -1249,6 +1258,9 @@ func isEcDataShardFile(fileName, baseName string) bool {
 }
 
 func (vs *VolumeServer) VolumeEcShardsMount(ctx context.Context, req *volume_server_pb.VolumeEcShardsMountRequest) (*volume_server_pb.VolumeEcShardsMountResponse, error) {
+	if err := checkVolumeCollection(req.Collection); err != nil {
+		return nil, err
+	}
 
 	glog.V(0).Infof("VolumeEcShardsMount: %v", req)
 
@@ -1465,6 +1477,9 @@ func isLiveInLocalEcVolume(localEcVolume *erasure_coding.EcVolume, req *volume_s
 // VolumeEcShardsToVolume generates the .idx, .dat files from .ecx, .ecj and .ec01 ~ .ec14 files
 func (vs *VolumeServer) VolumeEcShardsToVolume(ctx context.Context, req *volume_server_pb.VolumeEcShardsToVolumeRequest) (*volume_server_pb.VolumeEcShardsToVolumeResponse, error) {
 	if err := vs.checkGrpcAdminAuth(ctx); err != nil {
+		return nil, err
+	}
+	if err := checkVolumeCollection(req.Collection); err != nil {
 		return nil, err
 	}
 	if err := vs.CheckMaintenanceMode(); err != nil {

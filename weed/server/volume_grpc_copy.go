@@ -64,6 +64,9 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 	if err := vs.checkGrpcAdminAuth(stream.Context()); err != nil {
 		return err
 	}
+	if err := checkVolumeCollection(req.Collection); err != nil {
+		return err
+	}
 	if err := vs.CheckMaintenanceMode(); err != nil {
 		return err
 	}
@@ -129,6 +132,9 @@ func (vs *VolumeServer) VolumeCopy(req *volume_server_pb.VolumeCopyRequest, stre
 			})
 		if nil != err {
 			return fmt.Errorf("read volume file status failed, %w", err)
+		}
+		if err = checkVolumeCollection(volFileInfoResp.Collection); err != nil {
+			return fmt.Errorf("source volume %d: %w", req.VolumeId, err)
 		}
 
 		diskType := volFileInfoResp.DiskType

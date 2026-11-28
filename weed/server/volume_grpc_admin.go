@@ -102,6 +102,9 @@ func (vs *VolumeServer) AllocateVolume(ctx context.Context, req *volume_server_p
 	if err := vs.checkGrpcAdminAuth(ctx); err != nil {
 		return resp, err
 	}
+	if err := checkVolumeCollection(req.Collection); err != nil {
+		return resp, err
+	}
 
 	if err := vs.CheckMaintenanceMode(); err != nil {
 		return resp, err
@@ -144,6 +147,9 @@ func (vs *VolumeServer) VolumeMount(ctx context.Context, req *volume_server_pb.V
 	resp := &volume_server_pb.VolumeMountResponse{}
 
 	if err := vs.checkGrpcAdminAuth(ctx); err != nil {
+		return resp, err
+	}
+	if err := checkVolumeCollection(req.GetCollection()); err != nil {
 		return resp, err
 	}
 
